@@ -7744,90 +7744,103 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
      */
     reported_len = tvb_reported_length(tvb);
 
-    if (!pinfo->fragmented && !pinfo->flags.in_error_pkt) {
-        if (reported_len < tcph->th_hlen) {
-            proto_tree_add_expert_format(tcp_tree, pinfo, &ei_tcp_short_segment, tvb, offset, 0,
-                                     "Short segment. Segment/fragment does not contain a full TCP header"
-                                     " (might be NMAP or someone else deliberately sending unusual packets)");
+    if (!pinfo->flags.in_error_pkt) {
+        if (!pinfo->fragmented) {
+            if (reported_len < tcph->th_hlen) {
+                proto_tree_add_expert_format(tcp_tree, pinfo, &ei_tcp_short_segment, tvb, offset, 0,
+                                         "Short segment. Segment/fragment does not contain a full TCP header"
+                                         " (might be NMAP or someone else deliberately sending unusual packets)");
+                tcph->th_have_seglen = FALSE;
+            } else {
+                proto_item *pi;
+
+                /* Compute the length of data in this segment. */
+                tcph->th_seglen = reported_len - tcph->th_hlen;
+                tcph->th_have_seglen = TRUE;
+
+                pi = proto_tree_add_uint(ti, hf_tcp_len, tvb, offset+12, 1, tcph->th_seglen);
+                proto_item_set_generated(pi);
+
+                /* initialize base_seq numbers */
+                if(!(pinfo->fd->visited) && tcpd) {
+                    /* if this is the first segment for this list we need to store the
+                     * base_seq
+                     * We use TCP_S_SAW_SYN/SYNACK to distinguish between client and server
+                     *
+                     * Start relative seq and ack numbers at 1 if this
+                     * is not a SYN packet. This makes the relative
+                     * seq/ack numbers to be displayed correctly in the
+                     * event that the SYN or SYN/ACK packet is not seen
+                     * (this solves bug 1542)
+                     */
+                    if( !(tcpd->fwd->static_flags & TCP_S_BASE_SEQ_SET)) {
+                        if(tcph->th_flags & TH_SYN) {
+                            tcpd->fwd->base_seq = tcph->th_seq;
+                            tcpd->fwd->static_flags |= (tcph->th_flags & TH_ACK) ? TCP_S_SAW_SYNACK : TCP_S_SAW_SYN;
+                        }
+                        else {
+                            tcpd->fwd->base_seq = tcph->th_seq-1;
+                        }
+                        tcpd->fwd->static_flags |= TCP_S_BASE_SEQ_SET;
+                    }
+
+                    /* Only store reverse sequence if this isn't the SYN
+                     * There's no guarantee that the ACK field of a SYN
+                     * contains zeros; get the ISN from the first segment
+                     * with the ACK bit set instead (usually the SYN/ACK).
+                     *
+                     * If the SYN and SYN/ACK were received out-of-order,
+                     * the ISN is ack-1. If we missed the SYN/ACK, but got
+                     * the last ACK of the 3WHS, the ISN is ack-1. For all
+                     * other packets the ISN is unknown, so ack-1 is
+                     * as good a guess as ack.
+                     */
+                    if( !(tcpd->rev->static_flags & TCP_S_BASE_SEQ_SET) && (tcph->th_flags & TH_ACK) ) {
+                        tcpd->rev->base_seq = tcph->th_ack-1;
+                        tcpd->rev->static_flags |= TCP_S_BASE_SEQ_SET;
+                    }
+                }
+
+                /* handle TCP seq# analysis parse all new segments we see */
+                if(tcp_analyze_seq) {
+                    if(!(pinfo->fd->visited)) {
+                        tcp_analyze_sequence_number(pinfo, tcph->th_seq, tcph->th_ack, tcph->th_seglen, tcph->th_flags, tcph->th_win, tcpd, tcppd);
+                    }
+                    if(tcpd && tcp_relative_seq) {
+                        (tcph->th_seq) -= tcpd->fwd->base_seq;
+                        if (tcph->th_flags & TH_ACK) {
+                            (tcph->th_ack) -= tcpd->rev->base_seq;
+                        }
+                    }
+                }
+
+                /* re-calculate window size, based on scaling factor */
+                if (!(tcph->th_flags&TH_SYN)) {   /* SYNs are never scaled */
+                    if (tcpd && (tcpd->fwd->win_scale>=0)) {
+                        (tcph->th_win)<<=tcpd->fwd->win_scale;
+                    }
+                    else if (tcpd && (tcpd->fwd->win_scale == -1)) {
+                        /* i.e. Unknown, but wasn't signalled with no scaling, so use preference setting instead! */
+                        if (tcp_default_window_scaling>=0) {
+                            (tcph->th_win)<<=tcp_default_window_scaling;
+                        }
+                    }
+                }
+
+                /* Compute the sequence number of next octet after this segment. */
+                nxtseq = tcph->th_seq + tcph->th_seglen;
+            }
+        }
+        else {
             tcph->th_have_seglen = FALSE;
-        } else {
-            proto_item *pi;
 
-            /* Compute the length of data in this segment. */
-            tcph->th_seglen = reported_len - tcph->th_hlen;
-            tcph->th_have_seglen = TRUE;
-
-            pi = proto_tree_add_uint(ti, hf_tcp_len, tvb, offset+12, 1, tcph->th_seglen);
-            proto_item_set_generated(pi);
-
-            /* initialize base_seq numbers */
-            if(!(pinfo->fd->visited) && tcpd) {
-                /* if this is the first segment for this list we need to store the
-                 * base_seq
-                 * We use TCP_S_SAW_SYN/SYNACK to distinguish between client and server
-                 *
-                 * Start relative seq and ack numbers at 1 if this
-                 * is not a SYN packet. This makes the relative
-                 * seq/ack numbers to be displayed correctly in the
-                 * event that the SYN or SYN/ACK packet is not seen
-                 * (this solves bug 1542)
-                 */
-                if( !(tcpd->fwd->static_flags & TCP_S_BASE_SEQ_SET)) {
-                    if(tcph->th_flags & TH_SYN) {
-                        tcpd->fwd->base_seq = tcph->th_seq;
-                        tcpd->fwd->static_flags |= (tcph->th_flags & TH_ACK) ? TCP_S_SAW_SYNACK : TCP_S_SAW_SYN;
-                    }
-                    else {
-                        tcpd->fwd->base_seq = tcph->th_seq-1;
-                    }
-                    tcpd->fwd->static_flags |= TCP_S_BASE_SEQ_SET;
-                }
-
-                /* Only store reverse sequence if this isn't the SYN
-                 * There's no guarantee that the ACK field of a SYN
-                 * contains zeros; get the ISN from the first segment
-                 * with the ACK bit set instead (usually the SYN/ACK).
-                 *
-                 * If the SYN and SYN/ACK were received out-of-order,
-                 * the ISN is ack-1. If we missed the SYN/ACK, but got
-                 * the last ACK of the 3WHS, the ISN is ack-1. For all
-                 * other packets the ISN is unknown, so ack-1 is
-                 * as good a guess as ack.
-                 */
-                if( !(tcpd->rev->static_flags & TCP_S_BASE_SEQ_SET) && (tcph->th_flags & TH_ACK) ) {
-                    tcpd->rev->base_seq = tcph->th_ack-1;
-                    tcpd->rev->static_flags |= TCP_S_BASE_SEQ_SET;
+            /* see issue #13550 */
+            if(tcp_analyze_seq && tcpd && tcp_relative_seq) {
+                (tcph->th_seq) -= tcpd->fwd->base_seq;
+                if (tcph->th_flags & TH_ACK) {
+                    (tcph->th_ack) -= tcpd->rev->base_seq;
                 }
             }
-
-            /* handle TCP seq# analysis parse all new segments we see */
-            if(tcp_analyze_seq) {
-                if(!(pinfo->fd->visited)) {
-                    tcp_analyze_sequence_number(pinfo, tcph->th_seq, tcph->th_ack, tcph->th_seglen, tcph->th_flags, tcph->th_win, tcpd, tcppd);
-                }
-                if(tcpd && tcp_relative_seq) {
-                    (tcph->th_seq) -= tcpd->fwd->base_seq;
-                    if (tcph->th_flags & TH_ACK) {
-                        (tcph->th_ack) -= tcpd->rev->base_seq;
-                    }
-                }
-            }
-
-            /* re-calculate window size, based on scaling factor */
-            if (!(tcph->th_flags&TH_SYN)) {   /* SYNs are never scaled */
-                if (tcpd && (tcpd->fwd->win_scale>=0)) {
-                    (tcph->th_win)<<=tcpd->fwd->win_scale;
-                }
-                else if (tcpd && (tcpd->fwd->win_scale == -1)) {
-                    /* i.e. Unknown, but wasn't signalled with no scaling, so use preference setting instead! */
-                    if (tcp_default_window_scaling>=0) {
-                        (tcph->th_win)<<=tcp_default_window_scaling;
-                    }
-                }
-            }
-
-            /* Compute the sequence number of next octet after this segment. */
-            nxtseq = tcph->th_seq + tcph->th_seglen;
         }
     } else
         tcph->th_have_seglen = FALSE;
