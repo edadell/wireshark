@@ -127,8 +127,10 @@ void EndpointDialog::tabChanged(int idx)
             }
 
             // move the selected tab at the head
-            recent.endpoint_tabs = g_list_remove_link(recent.endpoint_tabs, selected_tab);
-            recent.endpoint_tabs = g_list_prepend(recent.endpoint_tabs, selected_tab->data);
+            if (selected_tab != nullptr) {
+                recent.endpoint_tabs = g_list_remove_link(recent.endpoint_tabs, selected_tab);
+                recent.endpoint_tabs = g_list_prepend(recent.endpoint_tabs, selected_tab->data);
+            }
         }
     }
 
