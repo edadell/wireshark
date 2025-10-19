@@ -2032,6 +2032,8 @@ init_tcp_conversation_data(packet_info *pinfo, int direction)
         tcpd->flow2.tcp_analyze_seq_info = wmem_new0(wmem_file_scope(), struct tcp_analyze_seq_flow_info_t);
         tcpd->flow1.tcp_analyze_seq_info->num_contiguous_ranges = 0;
         tcpd->flow2.tcp_analyze_seq_info->num_contiguous_ranges = 0;
+        tcpd->flow1.tcp_analyze_seq_info->is_client = true;
+        tcpd->flow2.tcp_analyze_seq_info->is_client = false;
     }
     /* Only allocate the data if its actually going to be displayed */
     if (tcp_display_process_info)
@@ -8638,6 +8640,25 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
                  */
                 err_conv->last_frame = pinfo->num;
             }
+        }
+    }
+
+    /* Identification of client & server streams
+     */
+    if(!PINFO_FD_VISITED(pinfo) && tcpd && conversation_is_new) {
+        if( (tcph->th_flags & (TH_SYN|TH_ACK))==TH_SYN ) {
+            tcpd->fwd->tcp_analyze_seq_info->is_client = true;
+            tcpd->rev->tcp_analyze_seq_info->is_client = false;
+        }
+        else if( (tcph->th_flags & (TH_SYN|TH_ACK))==(TH_SYN|TH_ACK) ) {
+            tcpd->fwd->tcp_analyze_seq_info->is_client = false;
+            tcpd->rev->tcp_analyze_seq_info->is_client = true;
+        }
+        else {
+            /* naive association of the 1st src seen with the client */
+            // XXX - we might look at the ports instead
+            tcpd->fwd->tcp_analyze_seq_info->is_client = true;
+            tcpd->rev->tcp_analyze_seq_info->is_client = false;
         }
     }
 
