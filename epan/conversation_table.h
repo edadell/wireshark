@@ -409,7 +409,7 @@ WS_DLL_PUBLIC void
 add_conversation_table_data_extended(conv_hash_t *ch, const address *src, const address *dst, uint32_t src_port,
     uint32_t dst_port, conv_id_t conv_id, int num_frames, int num_bytes,
     nstime_t *ts, nstime_t *abs_ts, ct_dissector_info_t *ct_info,
-    conversation_type ctype, uint32_t frameid, int (*proto_conv_cb)(conversation_t *));
+    conversation_type ctype, int (*proto_conv_cb)(conversation_t *));
 
 /** Encapsulates add_conversation_table_data_with_conv_id() for the IPv4 specific case
  *  when the subnet aggregation user preference is true.

@@ -821,19 +821,16 @@ add_conversation_table_data_extended(
     nstime_t *abs_ts,
     ct_dissector_info_t *ct_info,
     conversation_type ctype,
-    uint32_t frameid,
     int (*proto_conv_cb)(conversation_t *) )
 {
     /* delegate the conversation_table update to the decorated function */
     conv_item_t *conv_item = add_conversation_table_data_with_conv_id(ch, src, dst, src_port, dst_port, conv_id, num_frames, num_bytes, ts, abs_ts, ct_info, ctype);
 
     /*
-     * Relies heavily on frameid to identify the conversation.
-     * XXX - Later on, either implement one more find_conversation() function to look for
-     * conv_id in the 'addr/port tuple' Htable, or move the conversation to the convid Htable to
-     * build a quicker identification method.
+     * The conversation is found in the Map.
+     * XXX - Later on, add as many maps as necessary as only the TCP ctype is supported for now.
      */
-    conversation_t *ct = find_conversation(frameid, src, dst, ctype, src_port, dst_port, 0);
+    conversation_t *ct = find_conversation_by_streamid(ctype, conv_id);
 
     conv_extension_tcp_t ext_tcp;
 

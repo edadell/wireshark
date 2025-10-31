@@ -278,6 +278,9 @@ typedef struct conversation {
 struct conversation_addr_port_endpoints;
 typedef struct conversation_addr_port_endpoints* conversation_addr_port_endpoints_t;
 
+/* Relation between TCP stream -> conversation */
+extern wmem_map_t* tcp_stream_table;
+
 WS_DLL_PUBLIC const address* conversation_key_addr1(const conversation_element_t *key);
 WS_DLL_PUBLIC uint32_t conversation_key_port1(const conversation_element_t *key);
 WS_DLL_PUBLIC const address* conversation_key_addr2(const conversation_element_t *key);
@@ -453,6 +456,14 @@ WS_DLL_PUBLIC conversation_t *find_conversation_deinterlacer(const uint32_t fram
 WS_DLL_PUBLIC conversation_t *find_conversation_deinterlacer_pinfo(const packet_info *pinfo);
 
 WS_DLL_PUBLIC conversation_t *find_conversation_by_id(const uint32_t frame, const conversation_type ctype, const uint32_t id);
+
+/**  Given a Stream ID, return the corresponding conversation
+ *
+ * @param ctype The conversation type.
+ * @param stream_id Stream ID.
+ * @return The matching conversation if found, otherwise NULL.
+ */
+WS_DLL_PUBLIC conversation_t *find_conversation_by_streamid(const conversation_type ctype, const uint32_t stream_id);
 
 WS_DLL_PUBLIC conversation_t *find_conversation_err_pkts(const uint32_t frame, const conversation_type ctype, const uint32_t id, const uint32_t rid);
 

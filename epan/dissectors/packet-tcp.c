@@ -1254,7 +1254,7 @@ tcpip_conversation_packet(void *pct, packet_info *pinfo, epan_dissect_t *edt _U_
     const struct tcpheader *tcphdr=(const struct tcpheader *)vip;
 
     add_conversation_table_data_extended(hash, &tcphdr->ip_src, &tcphdr->ip_dst, tcphdr->th_sport, tcphdr->th_dport, (conv_id_t) tcphdr->th_stream, 1, pinfo->fd->pkt_len,
-                                              &pinfo->rel_ts, &pinfo->abs_ts, &tcp_ct_dissector_info, CONVERSATION_TCP, (uint32_t)pinfo->num, tcp_conv_cb_update);
+                                              &pinfo->rel_ts, &pinfo->abs_ts, &tcp_ct_dissector_info, CONVERSATION_TCP, tcp_conv_cb_update);
 
 
     return TAP_PACKET_REDRAW;
@@ -8758,6 +8758,11 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
                 err_conv->last_frame = pinfo->num;
             }
         }
+
+        // Store the TCP stream -> conversation relation for all new conversations
+        if(conversation_is_new) {
+            wmem_map_insert(tcp_stream_table, GUINT_TO_POINTER(tcpd->stream), conv);
+        }
     }
 
     /* is there any manual analysis waiting ? */
@@ -11033,6 +11038,8 @@ proto_register_tcp(void)
     register_conversation_table(proto_mptcp, false, mptcpip_conversation_packet, tcpip_endpoint_packet);
     register_follow_stream(proto_tcp, "tcp_follow", tcp_follow_conv_filter, tcp_follow_index_filter, tcp_follow_address_filter,
                             tcp_port_to_display, follow_tcp_tap_listener, get_tcp_stream_count, NULL);
+
+    tcp_stream_table = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), g_direct_hash, g_direct_equal);
 
     tcp_tap = register_tap("tcp");
     tcp_follow_tap = register_tap("tcp_follow");

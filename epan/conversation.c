@@ -198,6 +198,8 @@ static uint32_t new_index;
  */
 static address null_address_ = ADDRESS_INIT_NONE;
 
+/* Relation between TCP stream -> conversation */
+wmem_map_t* tcp_stream_table;
 
 /* Element count including the terminating CE_CONVERSATION_TYPE */
 #define MAX_CONVERSATION_ELEMENTS 8 // Arbitrary.
@@ -2623,6 +2625,22 @@ end:
     DINSTR(wmem_free(NULL, addr_a_str));
     DINSTR(wmem_free(NULL, addr_b_str));
     return conversation;
+}
+
+conversation_t *
+find_conversation_by_streamid(const conversation_type ctype, const uint32_t stream_id)
+{
+    conversation_t *conversation;
+
+    // XXX - Only TCP streams are handled for now, extend this if necessary
+    switch (ctype)
+    {
+        case CONVERSATION_TCP:
+            conversation = (conversation_t *)wmem_map_lookup(tcp_stream_table, GUINT_TO_POINTER(stream_id));
+            return conversation;
+        default:
+            return NULL;
+    }
 }
 
 conversation_t *
